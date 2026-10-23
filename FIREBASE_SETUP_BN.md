@@ -30,7 +30,7 @@ Secrets যোগ করার পর Actions → Build BibahoBondhu APK → Run
 - নাম, জেলা, শিক্ষা, পেশা ও পাত্র/পাত্রী filter
 - profile visibility toggle
 - profile screen-এ online/offline indicator
-- profile document-এ email/password সংরক্ষণ না করা
+- profile document-এ email/password সংরক্ষণ না করা\n- বর্তমান Email/Password account-এর জন্য re-authentication চাওয়া স্থায়ী account deletion flow যোগ করা হয়েছে; বাস্তব Firebase project-এ সফলতা যাচাই করা বাকি
 
 ## 5. গুরুত্বপূর্ণ সীমা ও নিরাপত্তা
 - Firebase Auth বর্তমানে Email/Password ব্যবহার করে; SMS/phone OTP এখনো যুক্ত নয়।
@@ -38,4 +38,4 @@ Secrets যোগ করার পর Actions → Build BibahoBondhu APK → Run
 - বর্তমান Firestore rules authenticated members-কে visible profile পড়তে দেয় এবং user-কে নিজের profile-ই edit/delete করতে দেয়। Hidden profile অন্য সদস্য পড়তে পারবেন না।
 - "প্রোফাইল মুছুন" শুধু Firestore profile document মুছে; Firebase login account মুছে না। Account deletion flow ও re-authentication production launch-এর আগে যোগ করতে হবে।
 - Report/block, moderator console, profile/photo verification, consent/terms, privacy policy, abuse reporting, age assurance, rate limits, data retention/deletion workflow এবং আইনগত পর্যালোচনা এখনো production launch-এর আগে প্রয়োজন।
-- এই কোড build এবং বাস্তব Firebase project-এ end-to-end test না করা পর্যন্ত production-ready বলা যাবে না। বাস্তব সদস্যদের সংবেদনশীল তথ্য সংগ্রহ শুরু করবেন না।
+- এই কোড build এবং বাস্তব Firebase project-এ end-to-end test না করা পর্যন্ত production-ready বলা যাবে না। দুইটি আলাদা ফোনে registration, profile visibility, online/offline, logout এবং account deletion পরীক্ষা করা হয়নি। বাস্তব সদস্যদের সংবেদনশীল তথ্য সংগ্রহ শুরু করবেন না।
