@@ -1,6 +1,5 @@
 package com.hasantheabu.bibahobondhu
 
-import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,67 +16,77 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import org.json.JSONArray
-import org.json.JSONObject
-import java.security.MessageDigest
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 
-private const val PREF = "bibahobondhu_v1"
-private const val KEY = "members"
-private const val SESSION = "session"
-private const val FAV = "favorites"
-
-data class Member(
-    val phone: String, val hash: String, val name: String, val gender: String,
-    val age: Int, val district: String, val education: String, val job: String,
-    val about: String, val visible: Boolean = true
-)
-
-private fun passwordHash(s: String): String =
-    MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
-
-private fun Member.encode() = JSONObject().apply {
-    put("phone", phone); put("hash", hash); put("name", name); put("gender", gender)
-    put("age", age); put("district", district); put("education", education)
-    put("job", job); put("about", about); put("visible", visible)
+private data class Profile(
+    val uid: String = "",
+    val name: String = "",
+    val gender: String = "পাত্র",
+    val age: Int = 18,
+    val district: String = "",
+    val education: String = "",
+    val job: String = "",
+    val about: String = "",
+    val visible: Boolean = true,
+    val online: Boolean = false
+) {
+    fun toMap() = hashMapOf<String, Any>(
+        "uid" to uid, "name" to name, "gender" to gender, "age" to age,
+        "district" to district, "education" to education, "job" to job,
+        "about" to about, "visible" to visible, "online" to online,
+        "lastSeen" to FieldValue.serverTimestamp()
+    )
 }
-private fun decode(o: JSONObject) = Member(
-    o.optString("phone"), o.optString("hash"), o.optString("name"), o.optString("gender"),
-    o.optInt("age", 18), o.optString("district"), o.optString("education"),
-    o.optString("job"), o.optString("about"), o.optBoolean("visible", true)
-)
-private fun readMembers(c: Context): List<Member> = try {
-    val a = JSONArray(c.getSharedPreferences(PREF, 0).getString(KEY, "[]"))
-    (0 until a.length()).map { decode(a.getJSONObject(it)) }
-} catch (_: Exception) { emptyList() }
-private fun writeMembers(c: Context, ms: List<Member>) {
-    val a = JSONArray(); ms.forEach { a.put(it.encode()) }
-    c.getSharedPreferences(PREF, 0).edit().putString(KEY, a.toString()).apply()
-}
-private fun readFavorites(c: Context) =
-    c.getSharedPreferences(PREF, 0).getStringSet(FAV, emptySet())?.toSet() ?: emptySet()
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { App(this) }
+        try {
+            if (FirebaseApp.getApps(this).isEmpty() &&
+                BuildConfig.FIREBASE_API_KEY.isNotBlank() &&
+                BuildConfig.FIREBASE_APP_ID.isNotBlank() &&
+                BuildConfig.FIREBASE_PROJECT_ID.isNotBlank()
+            ) {
+                val options = FirebaseOptions.Builder()
+                    .setApiKey(BuildConfig.FIREBASE_API_KEY)
+                    .setApplicationId(BuildConfig.FIREBASE_APP_ID)
+                    .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
+                    .build()
+                FirebaseApp.initializeApp(this, options)
+            }
+        } catch (_: Exception) { }
+        setContent { BibahoBondhuOnline() }
     }
 }
 
 @Composable
-private fun App(ctx: Context) {
-    val prefs = remember { ctx.getSharedPreferences(PREF, 0) }
-    var members by remember { mutableStateOf(readMembers(ctx)) }
-    var session by remember { mutableStateOf(prefs.getString(SESSION, null)) }
+private fun BibahoBondhuOnline() {
+    val configured = remember {
+        FirebaseApp.getApps(androidx.compose.ui.platform.LocalContext.current).isNotEmpty()
+    }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val auth = remember(configured) { if (configured) FirebaseAuth.getInstance() else null }
+    val db = remember(configured) { if (configured) FirebaseFirestore.getInstance() else null }
+    var user by remember { mutableStateOf(auth?.currentUser) }
+    var profiles by remember { mutableStateOf<List<Profile>>(emptyList()) }
     var page by remember { mutableStateOf("find") }
     var mode by remember { mutableStateOf("register") }
-    var note by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf<Member?>(null) }
+    var message by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Profile?>(null) }
     var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf("সব") }
-    var favorites by remember { mutableStateOf(readFavorites(ctx)) }
+    var genderFilter by remember { mutableStateOf("সব") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("পাত্র") }
     var age by remember { mutableStateOf("২৫") }
     var district by remember { mutableStateOf("") }
@@ -85,10 +94,73 @@ private fun App(ctx: Context) {
     var job by remember { mutableStateOf("") }
     var about by remember { mutableStateOf("") }
     var consent by remember { mutableStateOf(false) }
-    val me = members.firstOrNull { it.phone == session }
+    var favorites by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    fun save(list: List<Member>) { members = list; writeMembers(ctx, list) }
-    fun logout() { session = null; prefs.edit().remove(SESSION).apply(); page = "find"; mode = "login" }
+    DisposableEffect(auth) {
+        if (auth == null) onDispose { }
+        else {
+            val listener = FirebaseAuth.AuthStateListener { a -> user = a.currentUser }
+            auth.addAuthStateListener(listener)
+            onDispose { auth.removeAuthStateListener(listener) }
+        }
+    }
+
+    DisposableEffect(db, user?.uid, lifecycleOwner) {
+        val uid = user?.uid
+        if (db == null || uid == null) {
+            profiles = emptyList()
+            onDispose { }
+        } else {
+            var registration: ListenerRegistration? = null
+            registration = db.collection("profiles").addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    message = "প্রোফাইল লোড হয়নি। Firebase security rules ও internet পরীক্ষা করুন।"
+                } else if (snapshot != null) {
+                    profiles = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            Profile(
+                                uid = doc.id,
+                                name = doc.getString("name") ?: "",
+                                gender = doc.getString("gender") ?: "পাত্র",
+                                age = (doc.getLong("age") ?: 18L).toInt(),
+                                district = doc.getString("district") ?: "",
+                                education = doc.getString("education") ?: "",
+                                job = doc.getString("job") ?: "",
+                                about = doc.getString("about") ?: "",
+                                visible = doc.getBoolean("visible") ?: true,
+                                online = doc.getBoolean("online") ?: false
+                            )
+                        } catch (_: Exception) { null }
+                    }
+                }
+            }
+            val observer = LifecycleEventObserver { _, event ->
+                val ref = db.collection("profiles").document(uid)
+                if (event == Lifecycle.Event.ON_START) {
+                    ref.update(mapOf("online" to true, "lastSeen" to FieldValue.serverTimestamp()))
+                } else if (event == Lifecycle.Event.ON_STOP) {
+                    ref.update(mapOf("online" to false, "lastSeen" to FieldValue.serverTimestamp()))
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                registration?.remove()
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                db.collection("profiles").document(uid).update(mapOf("online" to false, "lastSeen" to FieldValue.serverTimestamp()))
+            }
+        }
+    }
+
+    val me = profiles.firstOrNull { it.uid == user?.uid }
+
+    fun writeProfile(profile: Profile, success: String) {
+        if (db == null || user == null) return
+        busy = true
+        db.collection("profiles").document(user!!.uid).set(profile.toMap())
+            .addOnSuccessListener { message = success; busy = false }
+            .addOnFailureListener { e -> message = "সংরক্ষণ হয়নি: " + (e.localizedMessage ?: "অনুমতি বা নেটওয়ার্ক পরীক্ষা করুন"); busy = false }
+    }
 
     MaterialTheme(colorScheme = lightColorScheme(
         primary = androidx.compose.ui.graphics.Color(0xFF913B5B),
@@ -97,89 +169,107 @@ private fun App(ctx: Context) {
     )) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize()) {
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
                     Text("বিবাহবন্ধু", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Text("বিশ্বাস • সম্মান • সুন্দর সম্পর্ক")
+                    Text("অনলাইন বায়োডাটা ও জীবনসঙ্গী খোঁজার প্ল্যাটফর্ম")
                 }
-                if (me == null) {
-                    Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(mode == "register", { mode = "register"; note = "" }, label = { Text("নিবন্ধন") })
-                        FilterChip(mode == "login", { mode = "login"; note = "" }, label = { Text("লগইন") })
+
+                if (!configured || auth == null || db == null) {
+                    Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Firebase সংযোগ এখনো সেটআপ হয়নি", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("অনলাইন নিবন্ধন ও লাইভ প্রোফাইল চালু করতে Firebase API key, App ID ও Project ID GitHub Actions secrets-এ যোগ করতে হবে। Firebase Authentication ও Cloud Firestore enable না থাকলে অ্যাপ অনলাইনে কাজ করবে না.", Modifier.padding(top = 12.dp))
+                        Text("সেটআপ নির্দেশিকা Repository-তে FIREBASE_SETUP_BN.md নামে আছে।", Modifier.padding(top = 10.dp))
                     }
-                    if (mode == "register") {
-                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("নতুন সদস্য হোন", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                } else if (user == null) {
+                    Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(mode == "register", { mode = "register"; message = "" }, label = { Text("নিবন্ধন") })
+                        FilterChip(mode == "login", { mode = "login"; message = "" }, label = { Text("লগইন") })
+                    }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text(if (mode == "register") "নতুন সদস্য হোন" else "অ্যাকাউন্টে লগইন করুন", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(email, { email = it.trim() }, Modifier.fillMaxWidth(), label = { Text("ইমেইল ঠিকানা *") }, singleLine = true)
+                        OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর) *") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                        if (mode == "register") {
                             OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("পূর্ণ নাম *") }, singleLine = true)
-                            OutlinedTextField(phone, { phone = it.trim() }, Modifier.fillMaxWidth(), label = { Text("মোবাইল নম্বর *") }, singleLine = true)
-                            OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text("পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর) *") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
                             OutlinedTextField(age, { age = it }, Modifier.fillMaxWidth(), label = { Text("বয়স *") }, singleLine = true)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(gender == "পাত্র", { gender = "পাত্র" }, label = { Text("পাত্র") })
                                 FilterChip(gender == "পাত্রী", { gender = "পাত্রী" }, label = { Text("পাত্রী") })
                             }
-                            OutlinedTextField(district, { district = it }, Modifier.fillMaxWidth(), label = { Text("জেলা *") }, singleLine = true)
-                            OutlinedTextField(education, { education = it }, Modifier.fillMaxWidth(), label = { Text("শিক্ষাগত যোগ্যতা") }, singleLine = true)
-                            OutlinedTextField(job, { job = it }, Modifier.fillMaxWidth(), label = { Text("পেশা") }, singleLine = true)
+                            OutlinedTextField(district, { district = it }, Modifier.fillMaxWidth(), label = { Text("জেলা *") })
+                            OutlinedTextField(education, { education = it }, Modifier.fillMaxWidth(), label = { Text("শিক্ষাগত যোগ্যতা") })
+                            OutlinedTextField(job, { job = it }, Modifier.fillMaxWidth(), label = { Text("পেশা") })
                             OutlinedTextField(about, { about = it }, Modifier.fillMaxWidth(), label = { Text("নিজের সম্পর্কে") }, minLines = 3)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(consent, { consent = it })
-                                Text("আমি ১৮+ এবং বুঝেছি তথ্য এই ফোনে থাকবে।")
+                                Text("আমার বয়স ১৮+ এবং প্রোফাইল তথ্য দেখানোর বিষয়ে সম্মত।")
                             }
-                            Button(onClick = {
+                        }
+                        Button(enabled = !busy, onClick = {
+                            if (email.isBlank() || password.length < 8) {
+                                message = "সঠিক ইমেইল ও অন্তত ৮ অক্ষরের পাসওয়ার্ড দিন।"
+                            } else if (mode == "register") {
                                 val n = age.toIntOrNull()
                                 when {
-                                    name.isBlank() || phone.isBlank() || district.isBlank() || pass.length < 8 -> note = "নাম, মোবাইল, জেলা ও অন্তত ৮ অক্ষরের পাসওয়ার্ড দিন।"
-                                    !phone.matches(Regex("^[+]?[0-9]{8,15}$")) -> note = "সঠিক মোবাইল নম্বর দিন।"
-                                    n == null || n < 18 || n > 100 -> note = "বয়স ১৮ থেকে ১০০-এর মধ্যে হতে হবে।"
-                                    members.any { it.phone == phone } -> note = "এই নম্বরে অ্যাকাউন্ট আছে। লগইন করুন।"
-                                    !consent -> note = "নিবন্ধনের আগে সম্মতি দিন।"
+                                    name.isBlank() || district.isBlank() -> message = "নাম ও জেলা দিন।"
+                                    n == null || n < 18 || n > 100 -> message = "বয়স ১৮ থেকে ১০০-এর মধ্যে হতে হবে।"
+                                    !consent -> message = "নিবন্ধনের আগে সম্মতি দিন।"
                                     else -> {
-                                        val m = Member(phone, passwordHash(pass), name.trim(), gender, n, district.trim(), education.trim(), job.trim(), about.trim())
-                                        save(members + m); session = phone; prefs.edit().putString(SESSION, phone).apply()
-                                        page = "find"; note = "এই ডিভাইসে নিবন্ধন সম্পন্ন হয়েছে।"
+                                        busy = true
+                                        auth.createUserWithEmailAndPassword(email, password)
+                                            .addOnSuccessListener { result ->
+                                                val uid = result.user?.uid
+                                                if (uid == null) { busy = false; message = "অ্যাকাউন্ট তৈরি হয়নি।" }
+                                                else {
+                                                    val p = Profile(uid, name.trim(), gender, n, district.trim(), education.trim(), job.trim(), about.trim())
+                                                    db.collection("profiles").document(uid).set(p.toMap())
+                                                        .addOnSuccessListener { busy = false; page = "find"; message = "অনলাইন অ্যাকাউন্ট তৈরি হয়েছে।" }
+                                                        .addOnFailureListener { e -> busy = false; message = "অ্যাকাউন্ট হয়েছে, কিন্তু বায়োডাটা সংরক্ষণ হয়নি: " + (e.localizedMessage ?: "") }
+                                                }
+                                            }.addOnFailureListener { e -> busy = false; message = e.localizedMessage ?: "নিবন্ধন ব্যর্থ হয়েছে।" }
                                     }
                                 }
-                            }, Modifier.fillMaxWidth()) { Text("নিবন্ধন করুন") }
-                            if (note.isNotBlank()) Text(note, color = MaterialTheme.colorScheme.primary)
-                            Text("এটি লোকাল সংস্করণ—অনলাইন সার্ভার বা OTP নেই।", style = MaterialTheme.typography.bodySmall)
-                        }
-                    } else {
-                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(phone, { phone = it.trim() }, Modifier.fillMaxWidth(), label = { Text("মোবাইল নম্বর") }, singleLine = true)
-                            OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text("পাসওয়ার্ড") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-                            Button(onClick = {
-                                val found = members.firstOrNull { it.phone == phone && it.hash == passwordHash(pass) }
-                                if (found == null) note = "নম্বর বা পাসওয়ার্ড মেলেনি।"
-                                else { session = found.phone; prefs.edit().putString(SESSION, found.phone).apply(); note = "লগইন সফল।" }
-                            }, Modifier.fillMaxWidth()) { Text("লগইন") }
-                            if (note.isNotBlank()) Text(note, color = MaterialTheme.colorScheme.primary)
-                        }
+                            } else {
+                                busy = true
+                                auth.signInWithEmailAndPassword(email, password)
+                                    .addOnSuccessListener { busy = false; page = "find"; message = "লগইন সফল।" }
+                                    .addOnFailureListener { e -> busy = false; message = e.localizedMessage ?: "লগইন ব্যর্থ হয়েছে।" }
+                            }
+                        }, Modifier.fillMaxWidth()) { Text(if (busy) "অপেক্ষা করুন..." else if (mode == "register") "অনলাইনে নিবন্ধন করুন" else "লগইন") }
+                        if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.primary)
+                        Text("ইমেইল/পাসওয়ার্ড Firebase Authentication-এ থাকে; প্রোফাইলে লগইন গোপন তথ্য প্রকাশ করা হয় না.", style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        listOf("find" to "খুঁজুন", "edit" to "বায়োডাটা", "saved" to "পছন্দ", "account" to "অ্যাকাউন্ট").forEach { (key, label) ->
-                            FilterChip(page == key, { page = key; note = "" }, label = { Text(label) })
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 5.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        listOf("find" to "সদস্য খুঁজুন", "edit" to "বায়োডাটা", "saved" to "পছন্দ", "account" to "অ্যাকাউন্ট").forEach { (key, label) ->
+                            FilterChip(page == key, { page = key; message = "" }, label = { Text(label) })
                         }
                     }
                     when (page) {
                         "find" -> {
                             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp), label = { Text("নাম, জেলা, শিক্ষা বা পেশা") }, singleLine = true)
-                            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf("সব", "পাত্র", "পাত্রী").forEach { g -> FilterChip(filter == g, { filter = g }, label = { Text(g) }) }
                             }
-                            val found = members.filter { m -> m.phone != me.phone && m.visible && (filter == "সব" || m.gender == filter) && (query.isBlank() || listOf(m.name, m.district, m.education, m.job).any { it.contains(query, true) }) }
+                            val found = profiles.filter { p ->
+                                p.uid != user.uid && p.visible && (filter == "সব" || p.gender == filter) &&
+                                    (query.isBlank() || listOf(p.name, p.district, p.education, p.job).any { it.contains(query, true) })
+                            }
                             if (found.isEmpty()) {
                                 Column(Modifier.weight(1f).padding(22.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("এখনো অন্য কোনো স্থানীয় সদস্য নেই", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text("এই সংস্করণে প্রোফাইল শুধু একই ফোনের নিবন্ধিত সদস্যদের মধ্যে দেখা যায়। অন্য ফোনের সদস্যদের জন্য অনলাইন সার্ভার লাগবে।")
+                                    Text("কোনো প্রোফাইল পাওয়া যায়নি", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text("অন্যান্য নিবন্ধিত সদস্যরা প্রোফাইল তৈরি করলে তা এখানে লাইভ দেখা যাবে। নিজের প্রোফাইল দৃশ্যমান আছে কি না সেটিও পরীক্ষা করুন।")
                                 }
                             } else LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(found, key = { it.phone }) { m ->
-                                    Card(Modifier.fillMaxWidth().clickable { selected = m }) {
+                                items(found, key = { it.uid }) { p ->
+                                    Card(Modifier.fillMaxWidth().clickable { selected = p }) {
                                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Text(m.name + " • " + m.gender, fontWeight = FontWeight.Bold)
-                                            Text(m.age.toString() + " বছর • " + m.district)
-                                            Text(listOf(m.education, m.job).filter { it.isNotBlank() }.joinToString(" • "))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(p.name + " • " + p.gender, Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                                Text(if (p.online) "● অনলাইন" else "○ অফলাইন", color = if (p.online) androidx.compose.ui.graphics.Color(0xFF16834A) else androidx.compose.ui.graphics.Color.Gray, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            Text(p.age.toString() + " বছর • " + p.district)
+                                            Text(listOf(p.education, p.job).filter { it.isNotBlank() }.joinToString(" • "))
                                             Text("বিস্তারিত দেখতে চাপ দিন", color = MaterialTheme.colorScheme.primary)
                                         }
                                     }
@@ -187,17 +277,16 @@ private fun App(ctx: Context) {
                             }
                         }
                         "edit" -> {
-                            var eName by remember(me.phone) { mutableStateOf(me.name) }
-                            var eGender by remember(me.phone) { mutableStateOf(me.gender) }
-                            var eAge by remember(me.phone) { mutableStateOf(me.age.toString()) }
-                            var eDistrict by remember(me.phone) { mutableStateOf(me.district) }
-                            var eEdu by remember(me.phone) { mutableStateOf(me.education) }
-                            var eJob by remember(me.phone) { mutableStateOf(me.job) }
-                            var eAbout by remember(me.phone) { mutableStateOf(me.about) }
-                            var visible by remember(me.phone) { mutableStateOf(me.visible) }
+                            var eName by remember(me?.uid) { mutableStateOf(me?.name ?: "") }
+                            var eGender by remember(me?.uid) { mutableStateOf(me?.gender ?: "পাত্র") }
+                            var eAge by remember(me?.uid) { mutableStateOf((me?.age ?: 25).toString()) }
+                            var eDistrict by remember(me?.uid) { mutableStateOf(me?.district ?: "") }
+                            var eEducation by remember(me?.uid) { mutableStateOf(me?.education ?: "") }
+                            var eJob by remember(me?.uid) { mutableStateOf(me?.job ?: "") }
+                            var eAbout by remember(me?.uid) { mutableStateOf(me?.about ?: "") }
+                            var visible by remember(me?.uid) { mutableStateOf(me?.visible ?: true) }
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("আমার বায়োডাটা", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                Text("মোবাইল নম্বর ব্যক্তিগত রাখা হয়: " + me.phone)
                                 OutlinedTextField(eName, { eName = it }, Modifier.fillMaxWidth(), label = { Text("নাম") })
                                 OutlinedTextField(eAge, { eAge = it }, Modifier.fillMaxWidth(), label = { Text("বয়স") })
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -205,71 +294,69 @@ private fun App(ctx: Context) {
                                     FilterChip(eGender == "পাত্রী", { eGender = "পাত্রী" }, label = { Text("পাত্রী") })
                                 }
                                 OutlinedTextField(eDistrict, { eDistrict = it }, Modifier.fillMaxWidth(), label = { Text("জেলা") })
-                                OutlinedTextField(eEdu, { eEdu = it }, Modifier.fillMaxWidth(), label = { Text("শিক্ষা") })
+                                OutlinedTextField(eEducation, { eEducation = it }, Modifier.fillMaxWidth(), label = { Text("শিক্ষা") })
                                 OutlinedTextField(eJob, { eJob = it }, Modifier.fillMaxWidth(), label = { Text("পেশা") })
                                 OutlinedTextField(eAbout, { eAbout = it }, Modifier.fillMaxWidth(), label = { Text("নিজের সম্পর্কে") }, minLines = 3)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Switch(visible, { visible = it }); Spacer(Modifier.width(8.dp))
                                     Text(if (visible) "প্রোফাইল দৃশ্যমান" else "প্রোফাইল লুকানো")
                                 }
-                                Button(onClick = {
+                                Button(enabled = !busy, onClick = {
                                     val n = eAge.toIntOrNull()
-                                    if (eName.isBlank() || eDistrict.isBlank() || n == null || n < 18 || n > 100) note = "নাম, জেলা ও সঠিক বয়স দিন।"
-                                    else {
-                                        val u = me.copy(name = eName.trim(), gender = eGender, age = n, district = eDistrict.trim(), education = eEdu.trim(), job = eJob.trim(), about = eAbout.trim(), visible = visible)
-                                        save(members.map { if (it.phone == me.phone) u else it }); note = "বায়োডাটা সংরক্ষণ হয়েছে।"
-                                    }
+                                    if (eName.isBlank() || eDistrict.isBlank() || n == null || n < 18 || n > 100) message = "নাম, জেলা ও সঠিক বয়স দিন।"
+                                    else writeProfile(Profile(user.uid, eName.trim(), eGender, n, eDistrict.trim(), eEducation.trim(), eJob.trim(), eAbout.trim(), visible, me?.online ?: true), "বায়োডাটা অনলাইনে সংরক্ষণ হয়েছে।")
                                 }, Modifier.fillMaxWidth()) { Text("পরিবর্তন সংরক্ষণ") }
-                                if (note.isNotBlank()) Text(note, color = MaterialTheme.colorScheme.primary)
+                                if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                         "saved" -> {
-                            val saved = members.filter { it.phone in favorites && it.phone != me.phone && it.visible }
-                            if (saved.isEmpty()) Text("এখনো পছন্দের প্রোফাইল নেই।", Modifier.padding(18.dp))
+                            val saved = profiles.filter { it.uid in favorites && it.visible }
+                            if (saved.isEmpty()) Text("এই সেশনে কোনো পছন্দের প্রোফাইল নেই।", Modifier.padding(18.dp))
                             else LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp)) {
-                                items(saved, key = { it.phone }) { m ->
-                                    ListItem(headlineContent = { Text(m.name) }, supportingContent = { Text(m.age.toString() + " বছর • " + m.district) }, modifier = Modifier.clickable { selected = m })
+                                items(saved, key = { it.uid }) { p ->
+                                    ListItem(headlineContent = { Text(p.name) }, supportingContent = { Text(p.age.toString() + " বছর • " + p.district) }, modifier = Modifier.clickable { selected = p })
                                 }
                             }
                         }
                         else -> {
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("আমার অ্যাকাউন্ট", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                Text(me.name, style = MaterialTheme.typography.titleMedium)
-                                Text("মোবাইল: " + me.phone)
-                                Text("তথ্য এই ফোনে থাকে। অ্যাপের ডেটা মুছে গেলে তথ্য হারাতে পারে।")
-                                OutlinedButton(onClick = { logout() }, Modifier.fillMaxWidth()) { Text("লগআউট") }
+                                Text(me?.name ?: "প্রোফাইল তৈরি করুন", style = MaterialTheme.typography.titleMedium)
+                                Text("ইমেইল: " + (user.email ?: ""))
+                                Text("ইমেইল ঠিকানা অন্য সদস্যদের প্রোফাইলে দেখানো হয় না।")
                                 OutlinedButton(onClick = {
-                                    save(members.filterNot { it.phone == me.phone })
-                                    favorites = favorites - me.phone
-                                    prefs.edit().putStringSet(FAV, favorites).remove(SESSION).apply()
-                                    session = null; page = "find"; mode = "register"; note = "এই ডিভাইস থেকে অ্যাকাউন্ট মুছে ফেলা হয়েছে।"
-                                }, Modifier.fillMaxWidth()) { Text("অ্যাকাউন্ট ও বায়োডাটা মুছুন") }
-                                Text("বাস্তব অনলাইন সেবার জন্য নিরাপদ সার্ভার, OTP, সার্ভার-সাইড অনুমতি, রিপোর্ট/ব্লক মডারেশন ও গোপনীয়তা নীতি লাগবে।", style = MaterialTheme.typography.bodySmall)
+                                    val uid = user.uid
+                                    db.collection("profiles").document(uid).delete().addOnCompleteListener {
+                                        auth.signOut(); page = "find"; message = "লগআউট হয়েছে।"
+                                    }
+                                }, Modifier.fillMaxWidth()) { Text("বায়োডাটা মুছুন") }
+                                OutlinedButton(onClick = { auth.signOut(); page = "find"; message = "লগআউট হয়েছে।" }, Modifier.fillMaxWidth()) { Text("লগআউট") }
+                                Text("অনলাইন স্ট্যাটাস অ্যাপ সামনে থাকলে আপডেট হয়। নেটওয়ার্ক বিচ্ছিন্ন বা অ্যাপ জোর করে বন্ধ হলে অবস্থা আপডেট হতে দেরি হতে পারে।", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
-                    if (note.isNotBlank() && page != "edit" && page != "account") Text(note, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.primary)
+                    if (message.isNotBlank() && page != "edit" && page != "account") Text(message, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.primary)
                 }
             }
-            if (selected != null && me != null) {
-                val m = selected!!
+            if (selected != null) {
+                val p = selected!!
                 AlertDialog(
                     onDismissRequest = { selected = null },
-                    title = { Text(m.name, fontWeight = FontWeight.Bold) },
+                    title = { Text(p.name, fontWeight = FontWeight.Bold) },
                     text = { Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(m.gender + " • " + m.age + " বছর")
-                        Text("জেলা: " + m.district)
-                        if (m.education.isNotBlank()) Text("শিক্ষা: " + m.education)
-                        if (m.job.isNotBlank()) Text("পেশা: " + m.job)
-                        if (m.about.isNotBlank()) Text("পরিচিতি: " + m.about)
-                        Text("মোবাইল নম্বর গোপন রাখা হয়েছে।")
+                        Text(p.gender + " • " + p.age + " বছর")
+                        Text("জেলা: " + p.district)
+                        if (p.education.isNotBlank()) Text("শিক্ষা: " + p.education)
+                        if (p.job.isNotBlank()) Text("পেশা: " + p.job)
+                        if (p.about.isNotBlank()) Text("পরিচিতি: " + p.about)
+                        Text(if (p.online) "● এখন অনলাইন" else "○ এখন অফলাইন")
+                        Text("ইমেইল ও পাসওয়ার্ডের তথ্য দেখানো হয় না।")
                     } },
                     confirmButton = {
                         TextButton(onClick = {
-                            favorites = if (m.phone in favorites) favorites - m.phone else favorites + m.phone
-                            prefs.edit().putStringSet(FAV, favorites).apply(); selected = null
-                        }) { Text(if (m.phone in favorites) "পছন্দ বাদ দিন" else "পছন্দ সংরক্ষণ") }
+                            favorites = if (p.uid in favorites) favorites - p.uid else favorites + p.uid
+                            selected = null
+                        }) { Text(if (p.uid in favorites) "পছন্দ বাদ দিন" else "পছন্দ সংরক্ষণ") }
                     },
                     dismissButton = { TextButton(onClick = { selected = null }) { Text("বন্ধ করুন") } }
                 )
