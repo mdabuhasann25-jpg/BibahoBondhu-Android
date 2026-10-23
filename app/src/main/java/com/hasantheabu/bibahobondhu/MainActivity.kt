@@ -69,10 +69,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun BibahoBondhuOnline() {
-    val configured = remember {
-        FirebaseApp.getApps(androidx.compose.ui.platform.LocalContext.current).isNotEmpty()
-    }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val configured = remember(context) {
+        FirebaseApp.getApps(context).isNotEmpty()
+    }
     val auth = remember(configured) { if (configured) FirebaseAuth.getInstance() else null }
     val db = remember(configured) { if (configured) FirebaseFirestore.getInstance() else null }
     var user by remember { mutableStateOf(auth?.currentUser) }
@@ -329,7 +329,7 @@ private fun BibahoBondhuOnline() {
                                     db.collection("profiles").document(uid).delete().addOnCompleteListener {
                                         auth.signOut(); page = "find"; message = "লগআউট হয়েছে।"
                                     }
-                                }, Modifier.fillMaxWidth()) { Text("বায়োডাটা মুছুন") }
+                                }, Modifier.fillMaxWidth()) { Text("প্রোফাইল মুছুন") }
                                 OutlinedButton(onClick = { auth.signOut(); page = "find"; message = "লগআউট হয়েছে।" }, Modifier.fillMaxWidth()) { Text("লগআউট") }
                                 Text("অনলাইন স্ট্যাটাস অ্যাপ সামনে থাকলে আপডেট হয়। নেটওয়ার্ক বিচ্ছিন্ন বা অ্যাপ জোর করে বন্ধ হলে অবস্থা আপডেট হতে দেরি হতে পারে।", style = MaterialTheme.typography.bodySmall)
                             }
