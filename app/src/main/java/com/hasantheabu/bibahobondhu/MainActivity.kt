@@ -397,8 +397,7 @@ private fun BibahoBondhuOnline() {
                                                         busy = false
                                                         message = "লগইন অ্যাকাউন্ট মুছতে পারেনি। আবার লগইন করে চেষ্টা করুন: " + (e.localizedMessage ?: "")
                                                     }
-                                            }
-                                            .addOnFailureListener { e ->
+                                            }?.addOnFailureListener { e ->
                                                 busy = false
                                                 message = "বায়োডাটা মুছতে পারেনি: " + (e.localizedMessage ?: "")
                                             }
