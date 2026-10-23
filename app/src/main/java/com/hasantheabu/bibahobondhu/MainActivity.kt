@@ -77,6 +77,7 @@ private fun BibahoBondhuOnline() {
     val db = remember(configured) { if (configured) FirebaseFirestore.getInstance() else null }
     var user by remember { mutableStateOf(auth?.currentUser) }
     var profiles by remember { mutableStateOf<List<Profile>>(emptyList()) }
+    var myProfile by remember { mutableStateOf<Profile?>(null) }
     var page by remember { mutableStateOf("find") }
     var mode by remember { mutableStateOf("register") }
     var message by remember { mutableStateOf("") }
@@ -110,10 +111,10 @@ private fun BibahoBondhuOnline() {
         val uid = user?.uid
         if (db == null || uid == null) {
             profiles = emptyList()
+            myProfile = null
             onDispose { }
         } else {
-            var registration: ListenerRegistration? = null
-            registration = db.collection("profiles").addSnapshotListener { snapshot, error ->
+            val publicRegistration = db.collection("profiles").whereEqualTo("visible", true).addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     message = "প্রোফাইল লোড হয়নি। Firebase security rules ও internet পরীক্ষা করুন।"
                 } else if (snapshot != null) {
@@ -135,6 +136,24 @@ private fun BibahoBondhuOnline() {
                     }
                 }
             }
+            val ownRegistration = db.collection("profiles").document(uid).addSnapshotListener { doc, error ->
+                if (error == null && doc != null && doc.exists()) {
+                    myProfile = try {
+                        Profile(
+                            uid = doc.id,
+                            name = doc.getString("name") ?: "",
+                            gender = doc.getString("gender") ?: "পাত্র",
+                            age = (doc.getLong("age") ?: 18L).toInt(),
+                            district = doc.getString("district") ?: "",
+                            education = doc.getString("education") ?: "",
+                            job = doc.getString("job") ?: "",
+                            about = doc.getString("about") ?: "",
+                            visible = doc.getBoolean("visible") ?: true,
+                            online = doc.getBoolean("online") ?: false
+                        )
+                    } catch (_: Exception) { null }
+                } else if (doc != null && !doc.exists()) myProfile = null
+            }
             val observer = LifecycleEventObserver { _, event ->
                 val ref = db.collection("profiles").document(uid)
                 if (event == Lifecycle.Event.ON_START) {
@@ -145,14 +164,15 @@ private fun BibahoBondhuOnline() {
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
-                registration?.remove()
+                publicRegistration.remove()
+                ownRegistration.remove()
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 db.collection("profiles").document(uid).update(mapOf("online" to false, "lastSeen" to FieldValue.serverTimestamp()))
             }
         }
     }
 
-    val me = profiles.firstOrNull { it.uid == user?.uid }
+    val me = myProfile ?: profiles.firstOrNull { it.uid == user?.uid }
 
     fun writeProfile(profile: Profile, success: String) {
         if (db == null || user == null) return
