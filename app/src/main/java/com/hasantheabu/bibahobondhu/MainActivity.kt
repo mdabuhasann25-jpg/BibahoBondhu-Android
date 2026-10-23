@@ -258,7 +258,7 @@ private fun BibahoBondhuOnline() {
                                     .addOnSuccessListener { busy = false; page = "find"; message = "লগইন সফল।" }
                                     .addOnFailureListener { e -> busy = false; message = e.localizedMessage ?: "লগইন ব্যর্থ হয়েছে।" }
                             }
-                        }, Modifier.fillMaxWidth()) { Text(if (busy) "অপেক্ষা করুন..." else if (mode == "register") "অনলাইনে নিবন্ধন করুন" else "লগইন") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "অপেক্ষা করুন..." else if (mode == "register") "অনলাইনে নিবন্ধন করুন" else "লগইন") }
                         if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.primary)
                         Text("ইমেইল/পাসওয়ার্ড Firebase Authentication-এ থাকে; প্রোফাইলে লগইন গোপন তথ্য প্রকাশ করা হয় না.", style = MaterialTheme.typography.bodySmall)
                     }
@@ -275,7 +275,7 @@ private fun BibahoBondhuOnline() {
                                 listOf("সব", "পাত্র", "পাত্রী").forEach { g -> FilterChip(genderFilter == g, { genderFilter = g }, label = { Text(g) }) }
                             }
                             val found = profiles.filter { p ->
-                                p.uid != user.uid && p.visible && (genderFilter == "সব" || p.gender == genderFilter) &&
+                                p.uid != user?.uid && p.visible && (genderFilter == "সব" || p.gender == genderFilter) &&
                                     (query.isBlank() || listOf(p.name, p.district, p.education, p.job).any { it.contains(query, true) })
                             }
                             if (found.isEmpty()) {
@@ -327,8 +327,8 @@ private fun BibahoBondhuOnline() {
                                 Button(enabled = !busy, onClick = {
                                     val n = eAge.toIntOrNull()
                                     if (eName.isBlank() || eDistrict.isBlank() || n == null || n < 18 || n > 100) message = "নাম, জেলা ও সঠিক বয়স দিন।"
-                                    else writeProfile(Profile(user.uid, eName.trim(), eGender, n, eDistrict.trim(), eEducation.trim(), eJob.trim(), eAbout.trim(), visible, me?.online ?: true), "বায়োডাটা অনলাইনে সংরক্ষণ হয়েছে।")
-                                }, Modifier.fillMaxWidth()) { Text("পরিবর্তন সংরক্ষণ") }
+                                    else writeProfile(Profile(user?.uid ?: return@Button, eName.trim(), eGender, n, eDistrict.trim(), eEducation.trim(), eJob.trim(), eAbout.trim(), visible, me?.online ?: true), "বায়োডাটা অনলাইনে সংরক্ষণ হয়েছে।")
+                                }, modifier = Modifier.fillMaxWidth()) { Text("পরিবর্তন সংরক্ষণ") }
                                 if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.primary)
                             }
                         }
@@ -345,10 +345,10 @@ private fun BibahoBondhuOnline() {
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("আমার অ্যাকাউন্ট", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 Text(me?.name ?: "প্রোফাইল তৈরি করুন", style = MaterialTheme.typography.titleMedium)
-                                Text("ইমেইল: " + (user.email ?: ""))
+                                Text("ইমেইল: " + (user?.email ?: ""))
                                 Text("ইমেইল ঠিকানা অন্য সদস্যদের প্রোফাইলে দেখানো হয় না।")
                                 OutlinedButton(onClick = { deletePassword = ""; showDeleteDialog = true }, Modifier.fillMaxWidth()) { Text("স্থায়ীভাবে অ্যাকাউন্ট মুছুন") }
-                                OutlinedButton(onClick = { auth.signOut(); page = "find"; message = "লগআউট হয়েছে।" }, Modifier.fillMaxWidth()) { Text("লগআউট") }
+                                OutlinedButton(onClick = { auth?.signOut(); page = "find"; message = "লগআউট হয়েছে।", Modifier.fillMaxWidth()) { Text("লগআউট") }
                                 Text("অনলাইন স্ট্যাটাস অ্যাপ সামনে থাকলে আপডেট হয়। নেটওয়ার্ক বিচ্ছিন্ন বা অ্যাপ জোর করে বন্ধ হলে অবস্থা আপডেট হতে দেরি হতে পারে।", style = MaterialTheme.typography.bodySmall)
                             }
                         }
@@ -383,7 +383,7 @@ private fun BibahoBondhuOnline() {
                                 val credential = EmailAuthProvider.getCredential(currentEmail, deletePassword)
                                 current.reauthenticate(credential)
                                     .addOnSuccessListener {
-                                        db.collection("profiles").document(current.uid).delete()
+                                        db?.collection("profiles")?.document(current.uid)?.delete()
                                             .addOnSuccessListener {
                                                 current.delete()
                                                     .addOnSuccessListener {
