@@ -21,6 +21,13 @@ android {
         buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$projectId\"")
         buildConfigField("String", "FIREBASE_DATABASE_URL", "\"$databaseUrl\"")
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
     buildFeatures { compose = true; buildConfig = true }
 }
 dependencies {
