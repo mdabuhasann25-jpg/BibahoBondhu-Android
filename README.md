@@ -1,24 +1,23 @@
 # BibahoBondhu Android
 
-A Bengali-language Android app prototype for marriage biodata and matchmaking.
+Bangla-language Android marriage biodata and matchmaking app prototype.
 
-## Current build
-- Native Android app using Kotlin and Jetpack Compose
-- Profile creation and search UI
-- Account screen and local preferences
-- GitHub Actions workflow builds a debug APK on each push to main
+## Online architecture
+- Firebase Authentication: Email/password accounts
+- Cloud Firestore: member profiles and live updates
+- Authenticated users can read visible profiles
+- A member can only create, update, or delete their own profile document
+- Email and password are not stored in the public profile document
+- Profile visibility and basic online/offline display
 
-## Important deployment status
-This repository is currently a local-device prototype, not a live multi-user matchmaking service. It does not yet have a hosted backend, real OTP/password authentication, shared cloud profile storage, moderation tools, or server-side privacy enforcement. Do not use it to collect real users' sensitive biodata until those services and legal/privacy controls are configured and tested.
-
-A production release requires:
-1. A backend project (Firebase or equivalent), secure authentication, and database rules.
-2. Server-side authorization so only authenticated members can view member profiles.
-3. Profile visibility and consent settings, report/block, moderation, account deletion, and privacy policy.
-4. Secure photo storage, upload validation, and deletion handling.
-5. Signed release key and end-to-end testing.
+## Required setup before online use
+Follow [FIREBASE_SETUP_BN.md](FIREBASE_SETUP_BN.md). Add the required Firebase GitHub Actions secrets and publish the rules in [firestore.rules](firestore.rules).
 
 ## Build
-GitHub Actions runs the Build BibahoBondhu APK workflow. Open the Actions tab, select the latest successful run, and download the BibahoBondhu-debug-apk artifact. Extract the ZIP to get app-debug.apk.
+GitHub Actions → Build BibahoBondhu APK. The build artifact is a debug APK, not a signed Play Store release.
 
-Package: com.hasantheabu.bibahobondhu
+## Package
+`com.hasantheabu.bibahobondhu`
+
+## Not yet production-ready
+SMS OTP, robust Realtime Database presence, complete account deletion, report/block and moderation tools, verified identity, photos, privacy/terms pages, and production end-to-end security testing remain outstanding. Do not collect real users' sensitive information until these are implemented and tested.
