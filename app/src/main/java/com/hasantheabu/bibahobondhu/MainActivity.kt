@@ -272,10 +272,10 @@ private fun BibahoBondhuOnline() {
                         "find" -> {
                             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp), label = { Text("নাম, জেলা, শিক্ষা বা পেশা") }, singleLine = true)
                             Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("সব", "পাত্র", "পাত্রী").forEach { g -> FilterChip(filter == g, { filter = g }, label = { Text(g) }) }
+                                listOf("সব", "পাত্র", "পাত্রী").forEach { g -> FilterChip(genderFilter == g, { genderFilter = g }, label = { Text(g) }) }
                             }
                             val found = profiles.filter { p ->
-                                p.uid != user.uid && p.visible && (filter == "সব" || p.gender == filter) &&
+                                p.uid != user.uid && p.visible && (genderFilter == "সব" || p.gender == genderFilter) &&
                                     (query.isBlank() || listOf(p.name, p.district, p.education, p.job).any { it.contains(query, true) })
                             }
                             if (found.isEmpty()) {
