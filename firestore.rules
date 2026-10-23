@@ -3,7 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /profiles/{uid} {
       // Signed-in members can view only published profile documents.
-      allow read: if request.auth != null
+      // Directly fetch your own profile even when hidden; public directory only lists visible profiles.
+      allow get: if request.auth != null
+                 && (request.auth.uid == uid || resource.data.visible == true);
+      allow list: if request.auth != null
                   && resource.data.visible == true;
 
       // A member can create or update only their own profile.
