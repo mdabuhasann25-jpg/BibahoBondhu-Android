@@ -348,7 +348,7 @@ private fun BibahoBondhuOnline() {
                                 Text("ইমেইল: " + (user?.email ?: ""))
                                 Text("ইমেইল ঠিকানা অন্য সদস্যদের প্রোফাইলে দেখানো হয় না।")
                                 OutlinedButton(onClick = { deletePassword = ""; showDeleteDialog = true }, Modifier.fillMaxWidth()) { Text("স্থায়ীভাবে অ্যাকাউন্ট মুছুন") }
-                                OutlinedButton(onClick = { auth?.signOut(); page = "find"; message = "লগআউট হয়েছে।", Modifier.fillMaxWidth()) { Text("লগআউট") }
+                                OutlinedButton(onClick = { auth?.signOut(); page = "find"; message = "লগআউট হয়েছে।" }, modifier = Modifier.fillMaxWidth()) { Text("লগআউট") }
                                 Text("অনলাইন স্ট্যাটাস অ্যাপ সামনে থাকলে আপডেট হয়। নেটওয়ার্ক বিচ্ছিন্ন বা অ্যাপ জোর করে বন্ধ হলে অবস্থা আপডেট হতে দেরি হতে পারে।", style = MaterialTheme.typography.bodySmall)
                             }
                         }
@@ -374,7 +374,7 @@ private fun BibahoBondhuOnline() {
                     },
                     confirmButton = {
                         TextButton(enabled = !busy && deletePassword.isNotBlank(), onClick = {
-                            val current = auth.currentUser
+                            val current = auth?.currentUser
                             val currentEmail = current?.email
                             if (current == null || currentEmail.isNullOrBlank()) {
                                 message = "অ্যাকাউন্ট যাচাই করা যাচ্ছে না। আবার লগইন করুন।"
@@ -384,7 +384,7 @@ private fun BibahoBondhuOnline() {
                                 current.reauthenticate(credential)
                                     .addOnSuccessListener {
                                         db?.collection("profiles")?.document(current.uid)?.delete()
-                                            .addOnSuccessListener {
+                                            ?.addOnSuccessListener {
                                                 current.delete()
                                                     .addOnSuccessListener {
                                                         busy = false
