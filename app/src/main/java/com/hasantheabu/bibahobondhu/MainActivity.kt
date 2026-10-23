@@ -241,7 +241,7 @@ private fun BibahoBondhuOnline() {
                                                 val uid = result.user?.uid
                                                 if (uid == null) { busy = false; message = "অ্যাকাউন্ট তৈরি হয়নি।" }
                                                 else {
-                                                    val p = Profile(uid, name.trim(), gender, n, district.trim(), education.trim(), job.trim(), about.trim())
+                                                    val p = Profile(uid, name.trim(), gender, n, district.trim(), education.trim(), job.trim(), about.trim(), online = true)
                                                     db.collection("profiles").document(uid).set(p.toMap())
                                                         .addOnSuccessListener { busy = false; page = "find"; message = "অনলাইন অ্যাকাউন্ট তৈরি হয়েছে।" }
                                                         .addOnFailureListener { e -> busy = false; message = "অ্যাকাউন্ট হয়েছে, কিন্তু বায়োডাটা সংরক্ষণ হয়নি: " + (e.localizedMessage ?: "") }
