@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -95,6 +96,8 @@ private fun BibahoBondhuOnline() {
     var job by remember { mutableStateOf("") }
     var about by remember { mutableStateOf("") }
     var consent by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var deletePassword by remember { mutableStateOf("") }
     var favorites by remember { mutableStateOf<Set<String>>(emptySet()) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -344,12 +347,7 @@ private fun BibahoBondhuOnline() {
                                 Text(me?.name ?: "প্রোফাইল তৈরি করুন", style = MaterialTheme.typography.titleMedium)
                                 Text("ইমেইল: " + (user.email ?: ""))
                                 Text("ইমেইল ঠিকানা অন্য সদস্যদের প্রোফাইলে দেখানো হয় না।")
-                                OutlinedButton(onClick = {
-                                    val uid = user.uid
-                                    db.collection("profiles").document(uid).delete().addOnCompleteListener {
-                                        auth.signOut(); page = "find"; message = "লগআউট হয়েছে।"
-                                    }
-                                }, Modifier.fillMaxWidth()) { Text("প্রোফাইল মুছুন") }
+                                OutlinedButton(onClick = { deletePassword = ""; showDeleteDialog = true }, Modifier.fillMaxWidth()) { Text("স্থায়ীভাবে অ্যাকাউন্ট মুছুন") }
                                 OutlinedButton(onClick = { auth.signOut(); page = "find"; message = "লগআউট হয়েছে।" }, Modifier.fillMaxWidth()) { Text("লগআউট") }
                                 Text("অনলাইন স্ট্যাটাস অ্যাপ সামনে থাকলে আপডেট হয়। নেটওয়ার্ক বিচ্ছিন্ন বা অ্যাপ জোর করে বন্ধ হলে অবস্থা আপডেট হতে দেরি হতে পারে।", style = MaterialTheme.typography.bodySmall)
                             }
@@ -357,6 +355,65 @@ private fun BibahoBondhuOnline() {
                     }
                     if (message.isNotBlank() && page != "edit" && page != "account") Text(message, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.primary)
                 }
+            }
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { if (!busy) showDeleteDialog = false },
+                    title = { Text("অ্যাকাউন্ট স্থায়ীভাবে মুছবেন?") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("আপনার বায়োডাটা ও Firebase লগইন অ্যাকাউন্ট মুছে ফেলা হবে। এই কাজ ফিরিয়ে নেওয়া যাবে না। পরিচয় নিশ্চিত করতে বর্তমান পাসওয়ার্ড দিন।")
+                            OutlinedTextField(
+                                value = deletePassword,
+                                onValueChange = { deletePassword = it },
+                                label = { Text("বর্তমান পাসওয়ার্ড") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(enabled = !busy && deletePassword.isNotBlank(), onClick = {
+                            val current = auth.currentUser
+                            val currentEmail = current?.email
+                            if (current == null || currentEmail.isNullOrBlank()) {
+                                message = "অ্যাকাউন্ট যাচাই করা যাচ্ছে না। আবার লগইন করুন।"
+                            } else {
+                                busy = true
+                                val credential = EmailAuthProvider.getCredential(currentEmail, deletePassword)
+                                current.reauthenticate(credential)
+                                    .addOnSuccessListener {
+                                        db.collection("profiles").document(current.uid).delete()
+                                            .addOnSuccessListener {
+                                                current.delete()
+                                                    .addOnSuccessListener {
+                                                        busy = false
+                                                        showDeleteDialog = false
+                                                        deletePassword = ""
+                                                        message = "অ্যাকাউন্ট ও বায়োডাটা স্থায়ীভাবে মুছে ফেলা হয়েছে।"
+                                                        page = "find"
+                                                    }
+                                                    .addOnFailureListener { e ->
+                                                        busy = false
+                                                        message = "লগইন অ্যাকাউন্ট মুছতে পারেনি। আবার লগইন করে চেষ্টা করুন: " + (e.localizedMessage ?: "")
+                                                    }
+                                            }
+                                            .addOnFailureListener { e ->
+                                                busy = false
+                                                message = "বায়োডাটা মুছতে পারেনি: " + (e.localizedMessage ?: "")
+                                            }
+                                    }
+                                    .addOnFailureListener {
+                                        busy = false
+                                        message = "পাসওয়ার্ড সঠিক নয় বা পুনরায় লগইন প্রয়োজন।"
+                                    }
+                            }
+                        }) { Text(if (busy) "মুছছে..." else "হ্যাঁ, স্থায়ীভাবে মুছুন") }
+                    },
+                    dismissButton = {
+                        TextButton(enabled = !busy, onClick = { showDeleteDialog = false }) { Text("বাতিল") }
+                    }
+                )
             }
             if (selected != null) {
                 val p = selected!!
